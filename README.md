@@ -34,6 +34,7 @@ Criado por / Created by **Daniel Nunes** — [github.com/NunesDanielPT](https://
 Pormenores aplicados automaticamente:
 
 - **HAP**: largura e altura múltiplas de 4 (margem preta à direita/em baixo, píxeis 1:1 — ou redimensionar), compressão Snappy, **4 chunks** em 1080p e **8** acima disso (o PLAYERSLICE descomprime-os em paralelo), `.mov`.
+- **H.264/H.265 pela gráfica NVIDIA (NVENC)** quando existir (testado ao abrir): muito mais rápido. Se falhar — ou se o ficheiro não passar na verificação — é refeito pela CPU (x264/x265).
 - **H.264**: High, 4:2:0 8 bits (seguro para NVDEC/D3D11VA), keyframe a cada segundo, GOP fechado, bitrate máximo limitado, `.mp4` com *faststart*. Bloqueado acima de 4096 px no PLAYERSLICE (limite do NVDEC) — H.265 vai até 8192.
 - **Som**: PCM 16 bits 48 kHz no `.mov` (intercalado em blocos de ~10 ms), AAC 320k 48 kHz no `.mp4`, estéreo, sincronizado com o vídeo. Normalização EBU R128 opcional (duas passagens).
 - **Frame rate** sempre constante (vídeos VFR de telemóvel corrigidos), desentrelaçamento automático, rotação de telemóvel aplicada, píxeis não quadrados corrigidos, matriz de cor BT.709 em HD.

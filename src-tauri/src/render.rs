@@ -10,7 +10,7 @@
 //! 5. O original nunca é alterado.
 
 use crate::media::{parse_probe, MediaInfo};
-use crate::presets::{build_plan, ffmpeg_args, Loudness, Note, Plan, RenderSettings};
+use crate::presets::{build_plan, ffmpeg_args_with, nvenc_fits, Codec, Encoder, Loudness, Note, Plan, RenderSettings};
 use crate::sys;
 use serde::Serialize;
 use serde_json::Value;
@@ -90,6 +90,62 @@ pub async fn ffmpeg_version() -> Option<String> {
     let first = txt.lines().next()?.to_string();
     // "ffmpeg version n7.1-... Copyright" → "n7.1-..."
     Some(first.split_whitespace().nth(2).unwrap_or(&first).to_string())
+}
+
+// ---------------------------------------------------------------- NVENC
+
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq)]
+pub struct GpuCaps {
+    pub h264: bool,
+    pub hevc: bool,
+}
+
+static GPU: OnceLock<GpuCaps> = OnceLock::new();
+
+/// Testa o NVENC a sério (codifica 5 frames): o encoder estar compilado não chega —
+/// é preciso uma gráfica NVIDIA e um driver recente.
+pub async fn detect_gpu() -> GpuCaps {
+    if let Some(c) = GPU.get() {
+        return *c;
+    }
+    let caps = if std::env::var("RENDERPRO_FORCE_NVENC").is_ok() {
+        GpuCaps { h264: true, hevc: true }
+    } else {
+        async fn works(enc: &str) -> bool {
+            let fut = command(&tools().ffmpeg, false)
+                .args([
+                    "-hide_banner", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-frames:v", "5",
+                    "-pix_fmt", "yuv420p", "-c:v", enc, "-f", "null", "-",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            matches!(tokio::time::timeout(Duration::from_secs(20), fut).await, Ok(Ok(st)) if st.success())
+        }
+        GpuCaps { h264: works("h264_nvenc").await, hevc: works("hevc_nvenc").await }
+    };
+    log(&format!("NVENC: H.264 {} · H.265 {}", caps.h264, caps.hevc));
+    let _ = GPU.set(caps);
+    caps
+}
+
+pub fn gpu_caps() -> GpuCaps {
+    GPU.get().copied().unwrap_or_default()
+}
+
+/// Testes: obriga a tentar o NVENC mesmo sem gráfica (para provar o recurso à CPU).
+pub static FORCE_NVENC_TRY: AtomicBool = AtomicBool::new(false);
+
+fn nvenc_for(c: Codec) -> bool {
+    if FORCE_NVENC_TRY.load(Ordering::SeqCst) && matches!(c, Codec::H264 | Codec::H265) {
+        return true;
+    }
+    let g = gpu_caps();
+    match c {
+        Codec::H264 => g.h264,
+        Codec::H265 => g.hevc,
+        _ => false,
+    }
 }
 
 // ---------------------------------------------------------------- registo
@@ -443,6 +499,7 @@ fn window_emitter(app: AppHandle) -> Emit {
 #[derive(Serialize, Clone, Debug)]
 pub struct JobResult {
     pub output: String,
+    pub encoder: Encoder,
     pub size: u64,
     pub seconds: f64,
     pub verified: bool,
@@ -468,6 +525,9 @@ pub async fn render_job(app: AppHandle, id: String, path: String, s: RenderSetti
 }
 
 pub async fn render_with(ev: Emit, id: String, path: String, s: RenderSettings) -> Result<JobResult, String> {
+    if s.gpu {
+        detect_gpu().await;
+    }
     let cancel = register(&id);
     let _active = sys::ActiveGuard::new();
     let started = Instant::now();
@@ -530,50 +590,83 @@ async fn render_inner(app: &Emit, id: &str, path: &str, s: &RenderSettings, canc
         }
     }
 
-    // 2) render para o temporário
+    // 2) render para o temporário — NVENC primeiro (se escolhido e disponível), CPU como rede de segurança
     let temp = temp_path(&final_path);
-    let _ = std::fs::remove_file(&temp);
-    pending_edit(&temp, true);
-    let args = ffmpeg_args(&info, s, &plan, loud.as_ref(), &temp.to_string_lossy());
-    log(&format!("Render {path} -> {} [{}] args: {}", plan.output, plan.codec_label, args.join(" ")));
-
     let cleanup = |t: &Path| {
         let _ = std::fs::remove_file(t);
         pending_edit(t, false);
     };
-
-    emit(app, id, "encode", 0.0, 0.0, 0.0, 0.0);
-    let dur = plan.duration.max(0.001);
-    let t0 = Instant::now();
-    let mut last = Instant::now();
-    let app2 = app.clone();
-    let id2 = id.to_string();
-    let res = run_ff(&args, s.low_priority, cancel, move |p| {
-        if last.elapsed() > Duration::from_millis(250) || p.end {
-            let f = (p.out_time / dur).clamp(0.0, 1.0);
-            let el = t0.elapsed().as_secs_f64();
-            let eta = if f > 0.01 { el / f - el } else { 0.0 };
-            emit(&app2, &id2, "encode", f * 100.0, p.fps, p.speed, eta);
-            last = Instant::now();
-        }
-    })
-    .await;
-    let enc_lines = match res {
-        Ok(l) => l,
-        Err(e) => {
-            cleanup(&temp);
-            return Err(e.code());
-        }
-    };
-    if !enc_lines.is_empty() {
-        warnings.push(Note { key: "warn.source_errors".into(), args: vec![enc_lines[0].chars().take(160).collect()] });
+    let mut encoders = vec![];
+    if s.gpu && nvenc_fits(&plan) && nvenc_for(plan.codec) {
+        encoders.push(Encoder::Nvenc);
     }
+    encoders.push(Encoder::Cpu);
 
-    // 3) verificação
-    emit(app, id, "verify", 0.0, 0.0, 0.0, 0.0);
-    if let Err(e) = verify(app, id, &temp, &plan, s, cancel).await {
-        cleanup(&temp);
-        return Err(e);
+    let mut used = Encoder::Cpu;
+    let mut last_err = String::new();
+    let mut ok = false;
+    for enc in encoders {
+        let _ = std::fs::remove_file(&temp);
+        pending_edit(&temp, true);
+        let args = ffmpeg_args_with(&info, s, &plan, loud.as_ref(), &temp.to_string_lossy(), enc);
+        log(&format!("Render {path} -> {} [{} {:?}] args: {}", plan.output, plan.codec_label, enc, args.join(" ")));
+
+        emit(app, id, "encode", 0.0, 0.0, 0.0, 0.0);
+        let dur = plan.duration.max(0.001);
+        let t0 = Instant::now();
+        let mut last = Instant::now();
+        let app2 = app.clone();
+        let id2 = id.to_string();
+        let res = run_ff(&args, s.low_priority, cancel, move |p| {
+            if last.elapsed() > Duration::from_millis(250) || p.end {
+                let f = (p.out_time / dur).clamp(0.0, 1.0);
+                let el = t0.elapsed().as_secs_f64();
+                let eta = if f > 0.01 { el / f - el } else { 0.0 };
+                emit(&app2, &id2, "encode", f * 100.0, p.fps, p.speed, eta);
+                last = Instant::now();
+            }
+        })
+        .await;
+        let enc_lines = match res {
+            Ok(l) => l,
+            Err(FfError::Cancelled) => {
+                cleanup(&temp);
+                return Err("cancelled".into());
+            }
+            Err(e) => {
+                cleanup(&temp);
+                last_err = e.code();
+                if enc == Encoder::Nvenc {
+                    log(&format!("NVENC falhou ({last_err}); a repetir com a CPU"));
+                    warnings.push(Note { key: "warn.nvenc_fallback".into(), args: vec![] });
+                    continue;
+                }
+                return Err(last_err);
+            }
+        };
+
+        // 3) verificação
+        emit(app, id, "verify", 0.0, 0.0, 0.0, 0.0);
+        if let Err(e) = verify(app, id, &temp, &plan, s, cancel).await {
+            cleanup(&temp);
+            if e != "cancelled" && enc == Encoder::Nvenc {
+                log(&format!("Ficheiro do NVENC não passou na verificação ({e}); a repetir com a CPU"));
+                warnings.push(Note { key: "warn.nvenc_fallback".into(), args: vec![] });
+                last_err = e;
+                continue;
+            }
+            return Err(e);
+        }
+        // linhas de erro que não sejam do próprio NVENC = problemas no original
+        if let Some(l) = enc_lines.iter().find(|l| !l.to_lowercase().contains("nvenc")) {
+            warnings.push(Note { key: "warn.source_errors".into(), args: vec![l.chars().take(160).collect()] });
+        }
+        used = enc;
+        ok = true;
+        break;
+    }
+    if !ok {
+        return Err(last_err);
     }
 
     // 4) nome final
@@ -600,7 +693,7 @@ async fn render_inner(app: &Emit, id: &str, path: &str, s: &RenderSettings, canc
     pending_edit(&temp, false);
     let size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
     emit(app, id, "done", 100.0, 0.0, 0.0, 0.0);
-    Ok(JobResult { output: out.to_string_lossy().into_owned(), size, seconds: 0.0, verified: s.verify, warnings })
+    Ok(JobResult { output: out.to_string_lossy().into_owned(), encoder: used, size, seconds: 0.0, verified: s.verify, warnings })
 }
 
 /// Confirma que o ficheiro produzido é exatamente o que foi pedido.

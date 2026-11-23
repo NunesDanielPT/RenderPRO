@@ -229,3 +229,28 @@ async fn broken_input_never_produces_output() {
     assert!(run(&d.join("lixo.mov"), RenderSettings::default()).await.is_err());
     assert!(!d.join("lixo_HAP.mov").exists());
 }
+
+#[tokio::test]
+#[ignore]
+async fn nvenc_failure_falls_back_to_cpu() {
+    use crate::presets::Encoder;
+    let d = dir("nvenc");
+    let src = d.join("clip.mov");
+    gen(&src, &["-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=25", "-f", "lavfi", "-i", "sine", "-t", "2", "-c:v", "prores_ks"]);
+    let real = crate::render::detect_gpu().await;
+    crate::render::FORCE_NVENC_TRY.store(true, std::sync::atomic::Ordering::SeqCst);
+    let s = RenderSettings { player: Player::Videohost, gpu: true, ..Default::default() };
+    let r = run(&src, s).await;
+    crate::render::FORCE_NVENC_TRY.store(false, std::sync::atomic::Ordering::SeqCst);
+    let r = r.unwrap();
+    let o = probe(&r.output).await.unwrap();
+    assert_eq!(o.codec, "h264");
+    if real.h264 {
+        assert_eq!(r.encoder, Encoder::Nvenc);
+    } else {
+        // sem gráfica NVIDIA: o NVENC falha e o ficheiro sai pela CPU, verificado
+        assert_eq!(r.encoder, Encoder::Cpu);
+        assert!(r.warnings.iter().any(|w| w.key == "warn.nvenc_fallback"));
+    }
+    assert!(leftovers(&d).is_empty());
+}

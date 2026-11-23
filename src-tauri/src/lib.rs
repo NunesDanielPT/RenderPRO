@@ -34,6 +34,7 @@ struct AppInfo {
     windows: bool,
     ffmpeg: Option<String>,
     bundled: bool,
+    gpu: render::GpuCaps,
 }
 
 #[tauri::command]
@@ -43,6 +44,7 @@ async fn app_info(app: AppHandle) -> AppInfo {
         windows: cfg!(windows),
         ffmpeg: render::ffmpeg_version().await,
         bundled: render::tools().bundled,
+        gpu: render::detect_gpu().await,
     }
 }
 

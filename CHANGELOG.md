@@ -1,5 +1,13 @@
 # RenderPRO — novidades
 
+## 0.2.0
+
+- H.264 e H.265 pela gráfica NVIDIA (NVENC): muito mais rápido nas RTX / H.264 and H.265 on the NVIDIA GPU (NVENC)
+- Deteção automática ao abrir (Definições → Geral mostra se a gráfica está disponível)
+- Se o NVENC falhar (driver antigo, tamanho fora dos limites, ficheiro que não passa na verificação) o vídeo é refeito pela CPU com x264/x265, com aviso na fila
+- Mesmas regras de segurança para os players: 4:2:0 8 bits, keyframe a cada segundo, GOP fixo
+- A fila mostra se cada vídeo foi feito pela GPU e o último aviso de cada render
+
 ## 0.1.0
 
 - Primeira versão do RenderPRO / First RenderPRO release (FFmpeg 9.0 incluído)

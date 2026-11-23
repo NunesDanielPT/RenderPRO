@@ -296,6 +296,8 @@ pub struct RenderSettings {
     pub overwrite: bool,
     pub verify: bool,
     pub low_priority: bool,
+    /// H.264/H.265 pela gráfica NVIDIA (NVENC) quando existir; se falhar volta ao x264/x265.
+    pub gpu: bool,
 }
 
 impl Default for RenderSettings {
@@ -321,6 +323,7 @@ impl Default for RenderSettings {
             overwrite: false,
             verify: true,
             low_priority: true,
+            gpu: true,
         }
     }
 }
@@ -677,8 +680,52 @@ pub fn max_rate_kbps(w: u32, h: u32, fps: f64, q: Quality) -> u32 {
     (base * mult).clamp(8_000.0, 240_000.0) as u32
 }
 
+/// Quem codifica o vídeo H.264/H.265.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Encoder {
+    /// x264 / x265 (CPU) — referência, sempre disponível.
+    Cpu,
+    /// NVENC (gráfica NVIDIA).
+    Nvenc,
+}
+
+/// O NVENC serve para este plano? (limites de tamanho do hardware)
+pub fn nvenc_fits(p: &Plan) -> bool {
+    let (max, min_w, min_h) = match p.codec {
+        Codec::H264 => (4096, 160, 64),
+        Codec::H265 => (8192, 160, 64),
+        _ => return false,
+    };
+    p.out_w <= max && p.out_h <= max && p.out_w >= min_w && p.out_h >= min_h
+}
+
+fn nvenc_cq(codec: Codec, q: Quality) -> u32 {
+    // o CQ do NVENC dá ficheiros parecidos com CRF ~3 abaixo
+    match (codec, q) {
+        (Codec::H264, Quality::Normal) => 23,
+        (Codec::H264, Quality::High) => 19,
+        (Codec::H264, Quality::Max) => 15,
+        (_, Quality::Normal) => 26,
+        (_, Quality::High) => 22,
+        (_, Quality::Max) => 18,
+    }
+}
+
 /// Argumentos completos do ffmpeg para o render (escreve em `temp`).
+#[cfg(test)]
 pub fn ffmpeg_args(info: &MediaInfo, s: &RenderSettings, p: &Plan, loud: Option<&Loudness>, temp: &str) -> Vec<String> {
+    ffmpeg_args_with(info, s, p, loud, temp, Encoder::Cpu)
+}
+
+pub fn ffmpeg_args_with(
+    info: &MediaInfo,
+    s: &RenderSettings,
+    p: &Plan,
+    loud: Option<&Loudness>,
+    temp: &str,
+    enc: Encoder,
+) -> Vec<String> {
     let mut a: Vec<String> = vec![];
     let mut push = |xs: &[&str]| a.extend(xs.iter().map(|x| x.to_string()));
     push(&["-hide_banner", "-nostdin", "-y", "-v", "error", "-progress", "pipe:1", "-nostats"]);
@@ -706,6 +753,23 @@ pub fn ffmpeg_args(info: &MediaInfo, s: &RenderSettings, p: &Plan, loud: Option<
             };
             let chunks = p.chunks.max(1).to_string();
             push(&["-c:v", "hap", "-format", fmt, "-compressor", "snappy", "-chunks", &chunks]);
+        }
+        Codec::H264 | Codec::H265 if enc == Encoder::Nvenc => {
+            let cq = nvenc_cq(p.codec, s.quality).to_string();
+            let mut mr = max_rate_kbps(p.out_w, p.out_h, fps, s.quality);
+            if p.codec == Codec::H265 {
+                mr = mr * 7 / 10;
+            }
+            let (mr, bs) = (format!("{mr}k"), format!("{}k", mr * 2));
+            let (name, profile) = if p.codec == Codec::H264 { ("h264_nvenc", "high") } else { ("hevc_nvenc", "main") };
+            push(&[
+                "-c:v", name, "-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", &cq, "-b:v", "0", "-maxrate", &mr,
+                "-bufsize", &bs, "-profile:v", profile, "-pix_fmt", "yuv420p", "-g", &g, "-bf", "2", "-strict_gop", "1",
+                "-no-scenecut", "1", "-forced-idr", "1", "-spatial-aq", "1", "-rc-lookahead", "20",
+            ]);
+            if p.codec == Codec::H265 {
+                push(&["-tag:v", "hvc1"]);
+            }
         }
         Codec::H264 => {
             let c = crf(Codec::H264, s.quality).to_string();
@@ -912,6 +976,29 @@ mod tests {
         let a = ffmpeg_args(&i, &s, &p, Some(&l), "o").join(" ");
         assert!(a.contains("loudnorm=I=-23.0"), "{a}");
         assert!(a.contains(",aresample=48000"));
+    }
+
+    #[test]
+    fn nvenc_args_and_limits() {
+        let s = RenderSettings { player: Player::Videohost, preset: "h264".into(), ..Default::default() };
+        let i = info(1920, 1080);
+        let p = build_plan(&i, &s, &never);
+        assert!(nvenc_fits(&p));
+        let a = ffmpeg_args_with(&i, &s, &p, None, "o", Encoder::Nvenc).join(" ");
+        assert!(a.contains("-c:v h264_nvenc"), "{a}");
+        assert!(a.contains("-pix_fmt yuv420p -g 25"), "{a}");
+        assert!(a.contains("-no-scenecut 1"));
+        assert!(!a.contains("libx264"));
+        let cpu = ffmpeg_args(&i, &s, &p, None, "o").join(" ");
+        assert!(cpu.contains("libx264"));
+
+        let s5 = RenderSettings { player: Player::Custom, preset: "h265".into(), ..Default::default() };
+        let p5 = build_plan(&info(7680, 1080), &s5, &never);
+        assert!(nvenc_fits(&p5));
+        assert!(ffmpeg_args_with(&info(7680, 1080), &s5, &p5, None, "o", Encoder::Nvenc).join(" ").contains("hevc_nvenc"));
+        let s4 = RenderSettings { player: Player::Custom, preset: "h264".into(), ..Default::default() };
+        assert!(!nvenc_fits(&build_plan(&info(5000, 1080), &s4, &never)));
+        assert!(!nvenc_fits(&build_plan(&info(1920, 1080), &RenderSettings::default(), &never))); // HAP
     }
 
     #[test]

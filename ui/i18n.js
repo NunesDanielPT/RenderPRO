@@ -103,6 +103,9 @@ const I18N = {
     guideFps: "Frame rate: igual ao do projeto (ex.: 50 fps).",
     guideAudio: "Som: PCM 16 bits a 48 kHz dentro do .mov, intercalado em blocos pequenos (≈10 ms).",
     guideDisk: "Disco: SSD NVMe — HAP tem bitrates altos.",
+    gpuOpt: "Usar a gráfica NVIDIA (NVENC) no H.264/H.265 — muito mais rápido; se falhar, repete pela CPU",
+    gpuLabel: "Gráfica NVIDIA (NVENC)", gpuYes: "disponível — H.264 e H.265 pela gráfica", gpuPart: "disponível só para H.264", gpuNo: "não encontrada — H.264/H.265 pela CPU",
+    "warn.nvenc_fallback": "O NVENC falhou: o vídeo foi feito pela CPU (x264/x265).",
     ok: "OK",
   },
   en: {
@@ -201,6 +204,9 @@ const I18N = {
     guideFps: "Frame rate: same as the project (e.g. 50 fps).",
     guideAudio: "Audio: 16-bit PCM at 48 kHz inside the .mov, interleaved in small blocks (≈10 ms).",
     guideDisk: "Disk: NVMe SSD — HAP has high bitrates.",
+    gpuOpt: "Use the NVIDIA GPU (NVENC) for H.264/H.265 — much faster; if it fails, it redoes it on the CPU",
+    gpuLabel: "NVIDIA GPU (NVENC)", gpuYes: "available — H.264 and H.265 on the GPU", gpuPart: "available for H.264 only", gpuNo: "not found — H.264/H.265 on the CPU",
+    "warn.nvenc_fallback": "NVENC failed: the video was made on the CPU (x264/x265).",
     ok: "OK",
   },
 };

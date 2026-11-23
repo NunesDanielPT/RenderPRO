@@ -13,7 +13,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const DEFAULT_SETTINGS = {
   player: "playerslice", preset: "auto", quality: "high", size: "original", width: 1920, height: 1080, fit: "stretch",
   align: "pad", fps: null, audio: true, stereo: true, normalize: false, lufs: -16, deinterlace: true,
-  output: "beside", folder: "", suffix: true, overwrite: false, verify: true, low_priority: true,
+  output: "beside", folder: "", suffix: true, overwrite: false, verify: true, low_priority: true, gpu: true,
 };
 const DEFAULT_PREFS = { concurrency: 1, whenDone: "nothing", checkUpdates: true };
 
@@ -40,6 +40,8 @@ const PLAYERS = {
   custom: { name: null, color: "var(--muted)", sub: "customSub" },
 };
 const playerName = (p) => PLAYERS[p].name || t("custom");
+const gpuCaps = () => (S.info && S.info.gpu) || { h264: false, hevc: false };
+const gpuFor = (codec, st) => st.gpu && ((codec === "h264" && gpuCaps().h264) || (codec === "h265" && gpuCaps().hevc));
 
 // ---------------------------------------------------------------- formatação
 
@@ -197,7 +199,8 @@ function stateHtml(it) {
       const r = it.result;
       const w = r.warnings && r.warnings.length;
       return `<div class="l ${w ? "warn" : "ok"}">✓ ${t("st_done")}${r.verified ? " · " + t("verified") : ""}</div>` +
-        `<div class="sub" title="${esc(r.output)}">${esc(baseName(r.output))} · ${fmtBytes(r.size)} · ${fmtDur(r.seconds)}</div>`;
+        `<div class="sub" title="${esc(r.output)}">${esc(baseName(r.output))} · ${fmtBytes(r.size)} · ${fmtDur(r.seconds)}${r.encoder === "nvenc" ? " · GPU" : ""}</div>` +
+        (w ? `<div class="sub" style="color:var(--warn)" title="${esc(r.warnings.map(noteText).join("\n"))}">⚠ ${esc(noteText(r.warnings[r.warnings.length - 1]))}</div>` : "");
     }
     case "error": return `<div class="l err" title="${esc(it.error)}">✕ ${esc(it.error)}</div>`;
     case "cancelled": return `<div class="l dim">${t("st_cancelled")}</div>`;
@@ -407,7 +410,8 @@ async function drawRenderLeft() {
       <button class="copt ${d.preset === "auto" ? "on" : ""}" data-preset="auto"><span class="rd"></span><span><div class="ct">${t("auto")}</div></span></button>
       ${codecList.map((c) => `<button class="copt ${d.preset === c.id ? "on" : ""}" data-preset="${c.id}"><span class="rd"></span><span><div class="ct">${c.label}</div><div class="cd">${t("desc." + c.id)}</div></span></button>`).join("")}
     </div></div>
-    ${usesQuality ? `<div class="sec"><div class="sec-t">${t("quality")} · H.264/H.265</div>${seg("quality", [["normal", t("qNormal")], ["high", t("qHigh")], ["max", t("qMax")]])}</div>` : ""}
+    ${usesQuality ? `<div class="sec"><div class="sec-t">${t("quality")} · H.264/H.265</div>${seg("quality", [["normal", t("qNormal")], ["high", t("qHigh")], ["max", t("qMax")]])}
+      ${gpuCaps().h264 || gpuCaps().hevc ? chk("gpu", t("gpuOpt")) : ""}</div>` : ""}
     <div class="sec"><div class="sec-t">${t("size")}</div>
       ${seg("size", [["original", t("sOriginal")], ["half", t("sHalf")], ["custom", t("sCustom")]])}
       ${d.size === "custom" ? `<div class="line"><input class="num" type="number" min="16" max="16384" data-n="width" value="${d.width}"> × <input class="num" type="number" min="16" max="16384" data-n="height" value="${d.height}">
@@ -471,7 +475,7 @@ async function drawSummary() {
     return `<div class="sum-item ${p.error ? "bad" : ""}">
       <div class="sum-top"><span class="n">${esc(it.name)}</span><span class="sum-arrow">→</span><span class="sum-codec">${esc(p.codec_label)}</span>
         ${p.auto ? `<span class="tag acc">${t("recommended")}</span>` : p.codec === p.recommended ? `<span class="tag acc">${t("recommended")}</span>` : ""}</div>
-      <div class="sum-spec">${it.info.width}×${it.info.height} ${fmtFps(it.info.fps_num, it.info.fps_den)}fps ${esc(it.info.codec_label)} → ${p.out_w}×${p.out_h} ${fmtFps(p.fps_num, p.fps_den)}fps${p.chunks ? " · " + p.chunks + " chunks" : ""}${p.audio ? " · " + (p.codec_label.startsWith("H.26") ? "AAC" : "PCM") + " 48 kHz" : ""} · ~${fmtBytes(p.est_bytes)}</div>
+      <div class="sum-spec">${it.info.width}×${it.info.height} ${fmtFps(it.info.fps_num, it.info.fps_den)}fps ${esc(it.info.codec_label)} → ${p.out_w}×${p.out_h} ${fmtFps(p.fps_num, p.fps_den)}fps${p.chunks ? " · " + p.chunks + " chunks" : ""}${["h264", "h265"].includes(p.codec) ? " · " + (gpuFor(p.codec, draft) ? "GPU NVENC" : "CPU") : ""}${p.audio ? " · " + (p.codec_label.startsWith("H.26") ? "AAC" : "PCM") + " 48 kHz" : ""} · ~${fmtBytes(p.est_bytes)}</div>
       ${p.auto || p.codec === p.recommended ? `<div class="sum-why">${esc(noteText(p.why))}</div>` : ""}
       ${p.warnings.map((w) => `<div class="sum-w">⚠ ${esc(noteText(w))}</div>`).join("")}
       ${p.error ? `<div class="sum-e">✕ ${esc(noteText(p.error))}</div>` : ""}
@@ -526,6 +530,7 @@ function openSettings(tab = "general") {
       <div class="field"><label>${t("language")}</label><div class="seg" id="s-lang"><button data-v="pt" class="${LANG === "pt" ? "on" : ""}">Português</button><button data-v="en" class="${LANG === "en" ? "on" : ""}">English</button></div></div>
       <div class="field"><label>${t("concurrency")}</label><div class="seg" id="s-conc"><button data-v="1" class="${S.prefs.concurrency == 1 ? "on" : ""}">1</button><button data-v="2" class="${S.prefs.concurrency == 2 ? "on" : ""}">2</button></div></div>
       <div class="field"><label>${t("whenDone")}</label><select class="sel" id="s-done"><option value="nothing">${t("doneNothing")}</option><option value="open" ${S.prefs.whenDone === "open" ? "selected" : ""}>${t("doneOpen")}</option></select></div>
+      <div class="field"><label>${t("gpuLabel")}</label><span class="${gpuCaps().h264 ? "" : "dim"}">${gpuCaps().h264 && gpuCaps().hevc ? t("gpuYes") : gpuCaps().h264 ? t("gpuPart") : t("gpuNo")}</span></div>
       <div class="field"><label></label><button class="btn" id="s-logs">${t("logs")}</button></div>`;
     $("#s-lang").querySelectorAll("button").forEach((b) => (b.onclick = () => { LANG = b.dataset.v; try { localStorage.setItem("renderpro.lang", LANG); } catch (_) {} applyI18n(); renderList(); openSettings("general"); }));
     $("#s-conc").querySelectorAll("button").forEach((b) => (b.onclick = () => { S.prefs.concurrency = +b.dataset.v; save("renderpro.prefs", S.prefs); openSettings("general"); }));
@@ -679,7 +684,7 @@ async function mockInvoke(cmd, a) {
   const codecs = { playerslice: ["hap", "hap_q", "hap_alpha", "h264", "h265", "prores_hq", "prores_4444", "dnxhr_hq"], videohost: ["h264", "hap", "hap_q", "hap_alpha", "prores_hq", "h265"], custom: ["hap", "hap_alpha", "hap_q", "h264", "h265", "prores_hq", "prores_4444", "dnxhr_hq"] };
   const label = { hap: "HAP", hap_alpha: "HAP Alpha", hap_q: "HAP Q", h264: "H.264", h265: "H.265", prores_hq: "ProRes 422 HQ", prores_4444: "ProRes 4444", dnxhr_hq: "DNxHR HQ" };
   switch (cmd) {
-    case "app_info": return { version: "0.1.0", windows: true, ffmpeg: "n7.1", bundled: true };
+    case "app_info": return { version: "0.2.0", windows: true, ffmpeg: "n9.0", bundled: true, gpu: { h264: true, hevc: true } };
     case "startup_files": return ["a", "b", "c", "d"];
     case "expand_paths": return a.paths;
     case "probe_file": return { a: info("LED_CENTER_T.mov", 4864, 936, 50, "ProRes 422 HQ"), b: info("Logo_loop.mov", 1080, 1080, 50, "ProRes 4444", { has_alpha: true, audio_index: null }), c: info("Abertura_4K.mp4", 3840, 2160, 25, "H.264", { vfr: true }), d: info("Entrevista.mxf", 1920, 1080, 25, "DNxHD", { interlaced: true }) }[a.path];

@@ -1,6 +1,6 @@
 [package]
 name = "renderpro"
-version = "0.1.0"
+version = "0.2.0"
 description = "RenderPRO — conversor de codecs para PLAYERSLICE e VIDEOHOST PLAYER"
 authors = ["Daniel Nunes"]
 edition = "2021"
