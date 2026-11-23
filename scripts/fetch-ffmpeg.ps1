@@ -3,20 +3,30 @@
 #
 # Porque GPL: inclui libx264/libx265 (H.264/H.265 de qualidade) e o Snappy (HAP).
 # O RenderPRO chama o ffmpeg.exe/ffprobe.exe como programas separados.
-# Fica fixo na série 7.1 (estável); só muda quando este script for alterado.
+# Prefere a série 7.1 (estável); se a BtbN deixar de a publicar usa a estável mais recente.
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $dest = Join-Path $root "src-tauri/ffmpeg"
 if (Test-Path (Join-Path $dest "ffmpeg.exe")) { Write-Host "FFmpeg já existe em $dest"; exit 0 }
 
-$series = "7.1"
+$prefer = "7.1"
 $headers = @{ "User-Agent" = "renderpro-build" }
 if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
 $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
-$pattern = '^ffmpeg-n' + [regex]::Escape($series) + '-latest-win64-gpl-shared-' + [regex]::Escape($series) + '\.zip$'
-$asset = $release.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
-if (-not $asset) { throw "Não encontrei $pattern na release 'latest' da BtbN" }
+# Só builds de versões estáveis (nX.Y), nunca a "master".
+$candidates = $release.assets | Where-Object { $_.name -match '^ffmpeg-n(\d+)\.(\d+)-latest-win64-gpl-shared-[\d.]+\.zip$' }
+if (-not $candidates) {
+  $release.assets | ForEach-Object { Write-Host "  disponível: $($_.name)" }
+  throw "Não encontrei nenhum build FFmpeg win64-gpl-shared estável na release 'latest' da BtbN"
+}
+$asset = $candidates | Where-Object { $_.name -like "ffmpeg-n$prefer-*" } | Select-Object -First 1
+if (-not $asset) {
+  $asset = $candidates |
+    Sort-Object { [int]($_.name -replace '^ffmpeg-n(\d+)\.(\d+).*', '$1') * 100 + [int]($_.name -replace '^ffmpeg-n(\d+)\.(\d+).*', '$2') } -Descending |
+    Select-Object -First 1
+}
+Write-Host "FFmpeg escolhido: $($asset.name)"
 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "renderpro-ffmpeg"
 if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
