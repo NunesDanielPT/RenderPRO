@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RenderPRO</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <img src="logo.png" alt="" class="brand-logo" data-tauri-drag-region>
+      <span class="brand-name" data-tauri-drag-region>RENDER<b>PRO</b></span>
+    </div>
+    <div class="brand-sub" data-tauri-drag-region data-i18n="sub">CONVERSOR DE CODECS</div>
+    <div class="spacer" data-tauri-drag-region></div>
+    <button class="tb-btn" id="btn-settings" data-i18n-title="settings" title="Definições">
+      <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path fill="none" stroke="currentColor" stroke-width="1.6" d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4Z"/></svg>
+    </button>
+    <button class="tb-btn win" id="btn-min" data-i18n-title="minimize"><svg viewBox="0 0 12 12" width="11" height="11"><path d="M1 6h10" stroke="currentColor" stroke-width="1.2"/></svg></button>
+    <button class="tb-btn win" id="btn-max" data-i18n-title="maximize"><svg viewBox="0 0 12 12" width="11" height="11"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+    <button class="tb-btn win close" id="btn-close" data-i18n-title="close"><svg viewBox="0 0 12 12" width="11" height="11"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.2"/></svg></button>
+  </header>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <div class="toolbar">
+    <button class="btn" id="btn-add"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.6"/></svg><span data-i18n="addFiles"></span></button>
+    <button class="btn" id="btn-folder"><svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M1.5 3.5h4.5l1.5 1.5h7v8h-13z"/></svg><span data-i18n="addFolder"></span></button>
+    <div class="sep"></div>
+    <button class="btn ghost" id="btn-clear-done" data-i18n="clearDone"></button>
+    <button class="btn ghost" id="btn-clear-all" data-i18n="clearAll"></button>
+    <div class="spacer"></div>
+    <button class="target" id="btn-target" title="">
+      <span class="target-label" data-i18n="target"></span>
+      <span class="target-dot" id="target-dot"></span>
+      <span id="target-name">PLAYERSLICE</span>
+    </button>
+    <button class="btn-render" id="btn-render">
+      <svg viewBox="0 0 16 16" width="13" height="13"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>
+      <span id="render-label" data-i18n="render">RENDER</span>
+    </button>
+  </div>
+
+  <main id="main">
+    <div id="empty" class="empty">
+      <div class="drop-art">
+        <svg viewBox="0 0 64 64" width="64" height="64"><rect x="6" y="12" width="52" height="40" rx="6" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M27 24l12 8-12 8z" fill="currentColor"/></svg>
+      </div>
+      <div class="empty-title" data-i18n="dropTitle"></div>
+      <div class="empty-sub" data-i18n="dropSub"></div>
+      <div class="empty-actions">
+        <button class="btn" id="btn-add2"><span data-i18n="addFiles"></span></button>
+        <button class="btn" id="btn-folder2"><span data-i18n="addFolder"></span></button>
+      </div>
+    </div>
+    <div id="list" class="list hidden">
+      <div class="row head">
+        <div></div>
+        <div data-i18n="colName"></div>
+        <div data-i18n="colSource"></div>
+        <div data-i18n="colRes"></div>
+        <div data-i18n="colFps"></div>
+        <div data-i18n="colDur"></div>
+        <div data-i18n="colAudio"></div>
+        <div data-i18n="colOut"></div>
+        <div data-i18n="colState"></div>
+        <div></div>
+      </div>
+      <div id="rows"></div>
+    </div>
+    <div id="drop-overlay" class="drop-overlay hidden"><div data-i18n="dropHere"></div></div>
+  </main>
+
+  <footer class="statusbar">
+    <div class="total-bar"><div id="total-fill"></div></div>
+    <span id="status">—</span>
+    <div class="spacer"></div>
+    <span id="count"></span>
+    <span class="dim" id="ffver"></span>
+  </footer>
+
+  <div id="modal" class="modal hidden"><div class="modal-box" id="modal-box"></div></div>
+  <div id="menu" class="menu hidden"></div>
+  <div id="toasts"></div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

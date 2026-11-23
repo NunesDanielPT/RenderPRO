@@ -1,0 +1,2 @@
+Aqui ficam o ffmpeg.exe e o ffprobe.exe (build GPL da BtbN), descarregados pela CI
+(scripts/fetch-ffmpeg.ps1). Não são guardados no Git.

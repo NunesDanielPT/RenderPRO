@@ -1,0 +1,7 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/ffmpeg/*
+!src-tauri/ffmpeg/LEIA-ME.txt
+dist/
+*.renderpro-part

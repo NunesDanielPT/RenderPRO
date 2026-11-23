@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RenderPRO",
+  "mainBinaryName": "RenderPRO",
+  "version": "0.1.0",
+  "identifier": "pt.danielnunes.renderpro",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "RenderPRO",
+        "width": 1240,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 560,
+        "center": true,
+        "decorations": false,
+        "dragDropEnabled": true,
+        "backgroundColor": "#0b0c0e"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Daniel Nunes",
+    "copyright": "© 2026 Daniel Nunes",
+    "category": "Video",
+    "shortDescription": "RenderPRO — conversor de codecs para PLAYERSLICE e VIDEOHOST PLAYER",
+    "longDescription": "Converte vídeos para os codecs recomendados do PLAYERSLICE e do VIDEOHOST PLAYER (HAP, HAP Q, HAP Alpha, H.264, H.265, ProRes, DNxHR), com verificação de cada ficheiro.",
+    "homepage": "https://github.com/NunesDanielPT/RenderPRO",
+    "resources": {
+      "ffmpeg/*": "ffmpeg/"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Portuguese", "English"],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}
