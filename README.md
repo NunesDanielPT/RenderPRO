@@ -55,7 +55,7 @@ Pormenores aplicados automaticamente:
 
 ```bash
 npm install
-pwsh scripts/fetch-ffmpeg.ps1          # FFmpeg 7.1 GPL (BtbN) para src-tauri/ffmpeg/
+pwsh scripts/fetch-ffmpeg.ps1          # FFmpeg estável GPL (BtbN) para src-tauri/ffmpeg/
 npx tauri dev
 cargo test --manifest-path src-tauri/Cargo.toml                       # testes unitários
 cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored  # + renders reais (ffmpeg no PATH)

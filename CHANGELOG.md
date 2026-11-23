@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-- Primeira versão do RenderPRO / First RenderPRO release
+- Primeira versão do RenderPRO / First RenderPRO release (FFmpeg 9.0 incluído)
 - Arrastar vídeos ou pastas → RENDER → escolher o player: PLAYERSLICE, VIDEOHOST PLAYER ou Personalizado
 - Modo automático: o codec recomendado para cada vídeo (HAP, HAP Alpha se tiver transparência, H.264 no VIDEOHOST até 1080p60)
 - Codecs: HAP, HAP Q, HAP Alpha, H.264, H.265, ProRes 422 HQ, ProRes 4444, DNxHR HQ
